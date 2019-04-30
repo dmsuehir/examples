@@ -1,5 +1,5 @@
-#FROM intelaipg/intel-optimized-tensorflow:PR25765-devel-mkl
-FROM intelaipg/intel-optimized-tensorflow:1.12.0-devel-mkl
+FROM intelaipg/intel-optimized-tensorflow:PR25765-devel-mkl
+#FROM intelaipg/intel-optimized-tensorflow:1.12.0-devel-mkl
 #FROM tensorflow/tensorflow:1.12.0-devel
 
 RUN pip install --upgrade pip & \
@@ -8,14 +8,16 @@ RUN pip install --upgrade pip & \
 RUN apt-get update && \
     apt-get install python-tk numactl libsm6 libxext6 -y
 
-RUN git clone https://github.com/IntelAI/models.git && \
-    chmod +x models/benchmarks/launch_benchmark.py
+#RUN git clone https://github.com/IntelAI/models.git && \
+#    chmod +x models/benchmarks/launch_benchmark.py
 
-RUN mkdir pretrained_models && \
-    cd pretrained_models && \
-    wget https://storage.googleapis.com/intel-optimized-tensorflow/models/resnet50_int8_pretrained_model.pb | curl -o resnet50_int8_pretrained_model.pb https://storage.googleapis.com/intel-optimized-tensorflow/models/resnet50_int8_pretrained_model.pb && \
-    wget https://storage.googleapis.com/intel-optimized-tensorflow/models/resnet50_fp32_pretrained_model.pb | curl -o resnet50_fp32_pretrained_model.pb https://storage.googleapis.com/intel-optimized-tensorflow/models/resnet50_fp32_pretrained_model.pb && \
-    cd ..
+# Using Dina's fork
+RUN git clone https://github.com/dmsuehir/models.git --branch dina/pipelines && \
+    chmod +x models/benchmarks/launch_benchmark.py && \
+    mkdir pretrained_models
 
-ENTRYPOINT ["/usr/bin/python"]
-CMD ["models/benchmarks/launch_benchmark.py"]
+ADD launch_inference.py launch_inference.py
+RUN chmod +x launch_inference.py
+
+ENTRYPOINT ["/usr/bin/python3"]
+CMD ["launch_inference.py"]

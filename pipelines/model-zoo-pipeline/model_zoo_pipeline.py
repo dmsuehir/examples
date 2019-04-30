@@ -26,41 +26,45 @@ import kfp.gcp as gcp
   name='Model Zoo Inference Pipeline',
   description='A pipeline that runs inference benchmarking using the model zoo.'
 )
-def resnet50_inference_pipeline(pretrained_model='/root/pretrained_models/resnet50_int8_pretrained_model.pb',
-                   model_name='resnet50',
-                   precision='int8',
-                   batch_size='128',
-                   socket_id='0',
-                   warmup_steps='10',
-                   steps='300'):
+def model_zoo_inference_pipeline(
+        model_name='resnet50',
+        precision='int8',
+        mode='inference',
+        batch_size='128',
+        socket_id='0',
+        verbose='true',
+        benchmark_only='true',
+        extra_model_args=''):
   """
-  Pipeline with three stages:
-    1. Load a pretrained ResNet50 model and run inference benchmarking
+  Pipeline with the following stages:
+    1. Runs the launch_inference.py script which downloads the pretrained model
+       for the specified model/precision, and then runs inference using the
+       model zoo.
   """
-  arg_list = ["models/benchmarks/launch_benchmark.py",
-              "--in-graph", pretrained_model,
+
+  arg_list = ["launch_inference.py",
               "--model-name", model_name,
               "--framework", "tensorflow",
               "--precision", precision,
-              "--mode", "inference",
-              "--benchmark-only",
+              "--mode", mode,
+              "--benchmark-only", benchmark_only,
               "--batch-size", batch_size,
               "--socket-id", socket_id,
-              "--verbose",
-              "--", "warmup_steps={}".format(warmup_steps),
-              "steps={}".format(steps)]
+              "--verbose", verbose,
+              "--extra-model-args", extra_model_args]
 
   inference = dsl.ContainerOp(
       name='inference',
-      image='gcr.io/constant-cubist-173123/dina/intel-tf:1.12',
+      image='gcr.io/constant-cubist-173123/dina/intel-tf:PR25765-test-wrapper-v1',
       arguments=arg_list
   ).apply(gcp.use_gcp_secret('user-gcp-sa'))
   inference.set_memory_request('50G')
   inference.set_memory_limit('50G')
   inference.set_cpu_request('24500m')
   inference.set_cpu_limit('24500m')
+  # inference.set_image_pull_policy('Always')
 
 
 if __name__ == '__main__':
   import kfp.compiler as compiler
-  compiler.Compiler().compile(resnet50_inference_pipeline, __file__ + 'intel_tf-1.12.tar.gz')
+  compiler.Compiler().compile(model_zoo_inference_pipeline, __file__ + '_intel_tf-PR25765-test-wrapper.tar.gz')
