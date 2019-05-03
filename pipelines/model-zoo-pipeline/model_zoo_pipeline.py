@@ -21,12 +21,15 @@ Run this script to compile pipeline
 import kfp.dsl as dsl
 import kfp.gcp as gcp
 
+from kubernetes import client as k8s_client
+
 
 @dsl.pipeline(
   name='Model Zoo Inference Pipeline',
   description='A pipeline that runs inference benchmarking using the model zoo.'
 )
 def model_zoo_inference_pipeline(
+        data_location='',
         model_name='resnet50',
         precision='int8',
         mode='inference',
@@ -34,6 +37,7 @@ def model_zoo_inference_pipeline(
         socket_id='0',
         verbose='true',
         benchmark_only='true',
+        accuracy_only='false',
         extra_model_args=''):
   """
   Pipeline with the following stages:
@@ -48,23 +52,32 @@ def model_zoo_inference_pipeline(
               "--precision", precision,
               "--mode", mode,
               "--benchmark-only", benchmark_only,
+              "--accuracy-only", accuracy_only,
               "--batch-size", batch_size,
               "--socket-id", socket_id,
               "--verbose", verbose,
+              "--data-location", data_location,
               "--extra-model-args", extra_model_args]
 
   inference = dsl.ContainerOp(
       name='inference',
-      image='gcr.io/constant-cubist-173123/dina/intel-tf:PR25765-test-wrapper-v1',
+      image='gcr.io/constant-cubist-173123/dina/intel-tf:PR25765-v1',
       arguments=arg_list
   ).apply(gcp.use_gcp_secret('user-gcp-sa'))
   inference.set_memory_request('50G')
   inference.set_memory_limit('50G')
   inference.set_cpu_request('24500m')
   inference.set_cpu_limit('24500m')
-  # inference.set_image_pull_policy('Always')
+
+  # volume mount
+  inference.add_volume(k8s_client.V1Volume(name='imagenet-dataset',
+                                           host_path=k8s_client.V1HostPathVolumeSource(path='/home/dmsuehir/Imagenet_Validation')))
+  inference.add_volume_mount(k8s_client.V1VolumeMount(
+      mount_path='/root/dataset',
+      name='imagenet-dataset'))
+  inference.set_image_pull_policy('Always')
 
 
 if __name__ == '__main__':
   import kfp.compiler as compiler
-  compiler.Compiler().compile(model_zoo_inference_pipeline, __file__ + '_intel_tf-PR25765-test-wrapper.tar.gz')
+  compiler.Compiler().compile(model_zoo_inference_pipeline, __file__ + '_intel_tf-PR25765.tar.gz')

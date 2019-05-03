@@ -1,9 +1,12 @@
+import glob
 import os
 import subprocess
 import sys
 import urllib.request
+import zipfile
 
 from argparse import ArgumentParser
+from google.cloud import storage
 
 
 class LaunchInference(object):
@@ -11,6 +14,13 @@ class LaunchInference(object):
         self._define_args()
         self.args, _ = self._arg_parser.parse_known_args()
         self.pretrained_model_path = self._download_pretrained_model()
+
+        if self.args.data_location.startswith("gs://"):
+            self._download_dataset()
+        elif self.args.data_location != "":
+            print("Files at data_location ({}):".format(self.args.data_location))
+            print(os.listdir(self.args.data_location))
+
         self._run_model_zoo()
 
     def _define_args(self):
@@ -148,6 +158,7 @@ class LaunchInference(object):
         destination path is returned.
         :return: Destination path to where the pretrained model has been downloaded.
         """
+        # Using TF OOB gcloud storage links
         storage_bucket_link = "https://storage.googleapis.com/intel-optimized-tensorflow/models/"
         download_link_dict = {
             "inceptionv3": {
@@ -158,6 +169,7 @@ class LaunchInference(object):
                 "fp32": "resnet50_fp32_pretrained_model.pb",
                 "int8": "resnet50_int8_pretrained_model.pb"
             }
+
         }
 
         model_name = self.args.model_name
@@ -177,6 +189,68 @@ class LaunchInference(object):
                 sys.exit("The {} precision for model {} is not supported yet.".format(precision, model_name))
         else:
             sys.exit("The {} model is not supported".format(model_name))
+
+        # # Using AI hub links
+        # download_link_dict = {
+        #     "resnet50": {
+        #         "int8": "https://cloud-aihub-service-prod.storage.googleapis.com/asset/intel.com/products/e0d4316b-0d27-4e1c-adf5-b64317c1ade6/1/resnet50_int8_pretrained_model.pb.zip?GoogleAccessId=service@cloud-aihub-prod.iam.gserviceaccount.com"
+        #     }
+        # }
+        # model_name = self.args.model_name
+        # precision = self.args.precision
+        #
+        # if model_name in download_link_dict.keys():
+        #     if self.args.precision in download_link_dict[model_name].keys():
+        #         source_path = download_link_dict[model_name][precision]
+        #         zip_destination = os.path.join("/root/pretrained_models", "model.zip")
+        #
+        #         print("Downloading pretrained model from {} to {}".format(source_path, zip_destination))
+        #         urllib.request.urlretrieve(source_path, zip_destination)
+        #         print("Download complete")
+        #
+        #         with zipfile.ZipFile(zip_destination, "r") as zip_ref:
+        #             zip_ref.extractall()
+        #
+        #         frozen_graph_match = glob.glob("/root/pretrained_models/*.pb")
+        #
+        #         if len(frozen_graph_match) == 1:
+        #             return frozen_graph_match[0]
+        #         elif len(frozen_graph_match) > 1:
+        #             sys.exit("Multiple frozen graph files found: {}".format(str(frozen_graph_match)))
+        #         else:
+        #             sys.exit("Unable to find frozen graph file.")
+        #
+        #     else:
+        #         sys.exit("The {} precision for model {} is not supported yet.".format(precision, model_name))
+        # else:
+        #     sys.exit("The {} model is not supported".format(model_name))
+
+    def _download_dataset(self):
+        data_location = self.args.data_location
+
+        if data_location.startswith("gs://"):
+            # Download the dataset from Google Cloud Storage
+            bucket = os.path.dirname(data_location).strip("gs://")
+            directory = os.path.basename(data_location)
+
+            print("Getting GS bucket: {}".format(bucket))
+            storage_client = storage.Client()
+            bucket = storage_client.get_bucket(bucket_name=bucket)
+
+            print("Getting blobs from: {}".format(directory))
+            blobs = bucket.list_blobs(prefix=directory)
+
+            for blob in blobs:
+                # skip blobs that are directories
+                if blob.name.endswith("/"):
+                    continue
+
+                base_name = os.path.basename(blob.name)
+                destination_path = os.path.join("dataset", base_name)
+                print("Download file to {}".format(destination_path))
+                blob.download_to_filename(destination_path)
+
+            self.args.data_location = "/root/dataset"
 
     def _run_model_zoo(self):
         """ 
