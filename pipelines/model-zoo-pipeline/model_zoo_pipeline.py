@@ -31,7 +31,7 @@ from kubernetes import client as k8s_client
 def model_zoo_inference_pipeline(
         data_location='',
         model_name='resnet50',
-        precision='int8',
+        precision='fp32',
         mode='inference',
         batch_size='128',
         socket_id='0',
@@ -59,7 +59,7 @@ def model_zoo_inference_pipeline(
 
   inference = dsl.ContainerOp(
       name='inference',
-      image='gcr.io/constant-cubist-173123/dina/intel-tf:PR25765-v2',
+      image='gcr.io/constant-cubist-173123/dina/google-tf:1.12-v3',
       arguments=arg_list
   ).apply(gcp.use_gcp_secret('user-gcp-sa'))
   inference.set_memory_request('50G')
@@ -80,4 +80,4 @@ def model_zoo_inference_pipeline(
 
 if __name__ == '__main__':
   import kfp.compiler as compiler
-  compiler.Compiler().compile(model_zoo_inference_pipeline, __file__ + '_intel_tf-PR25765.tar.gz')
+  compiler.Compiler().compile(model_zoo_inference_pipeline, __file__ + '_google_tf.tar.gz')

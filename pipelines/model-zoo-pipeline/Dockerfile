@@ -1,6 +1,6 @@
-FROM intelaipg/intel-optimized-tensorflow:PR25765-devel-mkl
+#FROM intelaipg/intel-optimized-tensorflow:PR25765-devel-mkl
 #FROM intelaipg/intel-optimized-tensorflow:1.12.0-devel-mkl
-#FROM tensorflow/tensorflow:1.12.0-devel
+FROM tensorflow/tensorflow:1.12.0-devel
 
 RUN apt-get update && \
     apt-get install python-tk numactl libsm6 libxext6 -y
