@@ -116,18 +116,11 @@ class LaunchInference(object):
             dest="input_graph", default=None, type=str)
 
         self._arg_parser.add_argument(
-            "-k", "--benchmark-only",
-            help="For benchmark measurement only. If neither --benchmark-only "
-                 "or --accuracy-only are specified, it will default to run "
-                 "benchmarking.",
-            dest="benchmark_only", choices=["true", "false"], type=str.lower)
-
-        self._arg_parser.add_argument(
-            "--accuracy-only",
-            help="For accuracy measurement only.  If neither --benchmark-only "
-                 "or --accuracy-only are specified, it will default to run "
-                 "benchmarking.",
-            dest="accuracy_only", choices=["true", "false"], type=str.lower)
+            "--benchmark-or-accuracy",
+            help="Specify whether to run performance benchmarking or accuracy "
+                 "testing. Note that accuracy testing requires a dataset.",
+            dest="benchmark_or_accuracy", choices=["benchmark", "accuracy"],
+            default="benchmark", required=True, type=str.lower)
 
         self._arg_parser.add_argument(
             "--output-results",
@@ -298,11 +291,10 @@ class LaunchInference(object):
         if args.checkpoint:
             run_cmd += ["--checkpoint", args.checkpoint]
 
-        if args.benchmark_only and args.benchmark_only == "true":
-            run_cmd += ["--benchmark-only"]
-
-        if args.accuracy_only and args.accuracy_only == "true":
+        if args.benchmark_or_accuracy == "accuracy":
             run_cmd += ["--accuracy-only"]
+        else:
+            run_cmd += ["--benchmark-only"]
 
         if args.output_results and args.output_results == "true":
             run_cmd += ["--output-results"]

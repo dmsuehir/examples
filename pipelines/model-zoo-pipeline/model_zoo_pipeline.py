@@ -36,8 +36,7 @@ def model_zoo_inference_pipeline(
         batch_size='128',
         socket_id='0',
         verbose='true',
-        benchmark_only='true',
-        accuracy_only='false',
+        benchmark_or_accuracy='benchmark',
         extra_model_args=''):
   """
   Pipeline with the following stages:
@@ -51,8 +50,7 @@ def model_zoo_inference_pipeline(
               "--framework", "tensorflow",
               "--precision", precision,
               "--mode", mode,
-              "--benchmark-only", benchmark_only,
-              "--accuracy-only", accuracy_only,
+              "--benchmark-or-accuracy", benchmark_or_accuracy,
               "--batch-size", batch_size,
               "--socket-id", socket_id,
               "--verbose", verbose,
@@ -61,7 +59,7 @@ def model_zoo_inference_pipeline(
 
   inference = dsl.ContainerOp(
       name='inference',
-      image='gcr.io/constant-cubist-173123/dina/intel-tf:PR25765-v1',
+      image='gcr.io/constant-cubist-173123/dina/intel-tf:PR25765-v2',
       arguments=arg_list
   ).apply(gcp.use_gcp_secret('user-gcp-sa'))
   inference.set_memory_request('50G')
