@@ -75,7 +75,9 @@ def model_zoo_inference_pipeline(
   inference.add_volume_mount(k8s_client.V1VolumeMount(
       mount_path='/root/dataset',
       name='imagenet-dataset'))
-  inference.set_image_pull_policy('Always')
+
+  # Not supported yet?
+  #inference.set_image_pull_policy('Always')
 
 
 if __name__ == '__main__':
