@@ -59,7 +59,7 @@ def model_zoo_inference_pipeline(
 
   inference = dsl.ContainerOp(
       name='inference',
-      image='gcr.io/constant-cubist-173123/dina/intel-tf:PR25765-v2',
+      image='gcr.io/constant-cubist-173123/dina/intel-tf:PR25765-models-v3',
       arguments=arg_list
   ).apply(gcp.use_gcp_secret('user-gcp-sa'))
   inference.set_memory_request('50G')
@@ -73,9 +73,6 @@ def model_zoo_inference_pipeline(
   inference.add_volume_mount(k8s_client.V1VolumeMount(
       mount_path='/root/dataset',
       name='imagenet-dataset'))
-
-  # Not supported yet?
-  #inference.set_image_pull_policy('Always')
 
 
 if __name__ == '__main__':

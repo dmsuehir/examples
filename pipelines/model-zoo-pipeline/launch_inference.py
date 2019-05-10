@@ -2,6 +2,7 @@ import glob
 import os
 import subprocess
 import sys
+import tarfile
 import urllib.request
 import zipfile
 
@@ -37,11 +38,6 @@ class LaunchInference(object):
             "-f", "--framework",
             help="Specify the name of the deep learning framework to use.",
             dest="framework", default="tensorflow", required=True)
-
-        self._arg_parser.add_argument(
-            "-r", "--model-source-dir",
-            help="Specify the models source directory from your local machine",
-            nargs="?", dest="model_source_dir", type=str)
 
         self._arg_parser.add_argument(
             "-p", "--precision",
@@ -104,18 +100,6 @@ class LaunchInference(object):
             dest="data_num_inter_threads", default=None)
 
         self._arg_parser.add_argument(
-            "-c", "--checkpoint",
-            help="Specify the location of trained model checkpoint directory. "
-                 "If mode=training model/weights will be written to this "
-                 "location. If mode=inference assumes that the location points"
-                 " to a model that has already been trained.",
-            dest="checkpoint", default=None, type=str)
-
-        self._arg_parser.add_argument(
-            "-g", "--in-graph", help="Full path to the input graph ",
-            dest="input_graph", default=None, type=str)
-
-        self._arg_parser.add_argument(
             "--benchmark-or-accuracy",
             help="Specify whether to run performance benchmarking or accuracy "
                  "testing. Note that accuracy testing requires a dataset.",
@@ -154,13 +138,31 @@ class LaunchInference(object):
         # Using TF OOB gcloud storage links
         storage_bucket_link = "https://storage.googleapis.com/intel-optimized-tensorflow/models/"
         download_link_dict = {
+            "inception_resnet_v2": {
+                "fp32": os.path.join(storage_bucket_link, "inception_resnet_v2_fp32_pretrained_model.pb"),
+                "int8": os.path.join(storage_bucket_link, "inception_resnet_v2_int8_pretrained_model.pb")
+            },
             "inceptionv3": {
-                "fp32": "inceptionv3_fp32_pretrained_model.pb",
-                "int8": "inceptionv3_int8_pretrained_model.pb"
+                "fp32": os.path.join(storage_bucket_link, "inceptionv3_fp32_pretrained_model.pb"),
+                "int8": os.path.join(storage_bucket_link, "inceptionv3_int8_pretrained_model.pb")
+            },
+            "inceptionv4": {
+                "fp32": os.path.join(storage_bucket_link, "inceptionv4_fp32_pretrained_model.pb"),
+                "int8": os.path.join(storage_bucket_link, "inceptionv4_int8_pretrained_model.pb")
+            },
+            "mobilenet_v1": {
+                "fp32": "http://download.tensorflow.org/models/mobilenet_v1_2018_08_02/mobilenet_v1_1.0_224.tgz"
             },
             "resnet50": {
-                "fp32": "resnet50_fp32_pretrained_model.pb",
-                "int8": "resnet50_int8_pretrained_model.pb"
+                "fp32": os.path.join(storage_bucket_link, "resnet50_fp32_pretrained_model.pb"),
+                "int8": os.path.join(storage_bucket_link, "resnet50_int8_pretrained_model.pb")
+            },
+            "resnet101": {
+                "fp32": os.path.join(storage_bucket_link, "resnet101_fp32_pretrained_model.pb"),
+                "int8": os.path.join(storage_bucket_link, "resnet101_int8_pretrained_model.pb")
+            },
+            "squeezenet": {
+                "fp32": os.path.join(storage_bucket_link, "squeezenet_fp32_pretrained_model.tar.gz")
             }
 
         }
@@ -170,8 +172,9 @@ class LaunchInference(object):
 
         if model_name in download_link_dict.keys():
             if self.args.precision in download_link_dict[model_name].keys():
-                source_path = os.path.join(storage_bucket_link, download_link_dict[model_name][precision])
-                destination_path = os.path.join("/root/pretrained_models", download_link_dict[model_name][precision])
+                source_path = download_link_dict[model_name][precision]
+                file_basename = os.path.basename(source_path)
+                destination_path = os.path.join("/root/pretrained_models", file_basename)
 
                 print("Downloading pretrained model from {} to {}".format(source_path, destination_path))
                 urllib.request.urlretrieve(source_path, destination_path)
@@ -259,10 +262,26 @@ class LaunchInference(object):
 
         # Use the pretrained model that we downloaded as the input graph
         if self.pretrained_model_path:
-            run_cmd += ["--in-graph", self.pretrained_model_path]
+            _, file_extension = os.path.splitext(self.pretrained_model_path)
+            if file_extension == ".pb":
+                run_cmd += ["--in-graph", self.pretrained_model_path]
+            else:
+                # It's probably a tar file with checkpoints, so extract the tar file
+                with tarfile.open(self.pretrained_model_path) as tf:
+                    tf.extractall("/root/pretrained_models/checkpoints")
+                checkpoint_dir = "/root/pretrained_models/checkpoints"
 
-        if args.model_source_dir:
-            run_cmd += ["--model-source-dir", args.model_source_dir]
+                # If the directory only contains one directory, then pass that instead
+                if len(os.listdir(checkpoint_dir)) == 1:
+                    if os.path.isdir(os.path.join(checkpoint_dir, os.listdir(checkpoint_dir)[0])):
+                        checkpoint_dir = os.path.join(checkpoint_dir, os.listdir(checkpoint_dir)[0])
+
+                # Set the checkpoint arg
+                run_cmd += ["--checkpoint", checkpoint_dir]
+
+        # Set the --model-source-dir arg, depending on the model
+        if args.model_name == "mobilenet_v1":
+            run_cmd += ["--model-source-dir", "/root/tensorflow/models"]
 
         if args.batch_size and args.batch_size != "-1":
             run_cmd += ["--batch-size", args.batch_size]
@@ -287,9 +306,6 @@ class LaunchInference(object):
 
         if args.data_num_intra_threads:
             run_cmd += ["--data-num-intra-threads", args.data_num_intra_threads]
-
-        if args.checkpoint:
-            run_cmd += ["--checkpoint", args.checkpoint]
 
         if args.benchmark_or_accuracy == "accuracy":
             run_cmd += ["--accuracy-only"]

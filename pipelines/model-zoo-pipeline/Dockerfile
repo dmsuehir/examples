@@ -1,5 +1,4 @@
 FROM intelaipg/intel-optimized-tensorflow:PR25765-devel-mkl
-#FROM intelaipg/intel-optimized-tensorflow:1.12.0-devel-mkl
 #FROM tensorflow/tensorflow:1.12.0-devel
 
 RUN apt-get update && \
@@ -12,16 +11,15 @@ RUN apt-get install python3-pip -y
 
 RUN pip3 install --upgrade google-cloud-storage
 
-#RUN git clone https://github.com/IntelAI/models.git && \
-#    chmod +x models/benchmarks/launch_benchmark.py
-
-# Using Dina's fork
+# Clone the model zoo and setup directories
 RUN git clone https://github.com/dmsuehir/models.git --branch dina/pipelines && \
-    chmod +x models/benchmarks/launch_benchmark.py
-
-RUN chmod +x models/benchmarks/launch_benchmark.py && \
+    chmod +x models/benchmarks/launch_benchmark.py && \
     mkdir -p pretrained_models && \
-    mkdir -p dataset
+    mkdir -p dataset && \
+    mkdir -p tensorflow
+
+# Clone the tensorflow/models repo to the tensorflow directory
+RUN git clone https://github.com/tensorflow/models tensorflow
 
 ADD launch_inference.py launch_inference.py
 RUN chmod +x launch_inference.py
