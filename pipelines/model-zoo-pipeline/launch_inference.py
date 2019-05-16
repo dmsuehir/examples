@@ -1,11 +1,9 @@
 import fileinput
-import glob
 import os
 import subprocess
 import sys
 import tarfile
 import urllib.request
-import zipfile
 
 from argparse import ArgumentParser
 from git import Repo
@@ -130,7 +128,7 @@ class LaunchInference(object):
             dest="extra_model_args", default="", type=str)
 
     def _get_extra_args_dict(self):
-        """ Parse the string of extra args to a dictionary """
+        """ Parse the string of extra args into a dictionary """
         extra_args_dict = {}
 
         if self.args.extra_model_args:
@@ -286,6 +284,7 @@ class LaunchInference(object):
             self.args.checkpoint_dir = None
 
     def _download_dataset(self):
+        """ Downloads the dataset to a local path, if the path given is in google cloud storage. """
         data_location = self.args.data_location
 
         if data_location.startswith("gs://"):
@@ -313,6 +312,12 @@ class LaunchInference(object):
             self.args.data_location = "/root/dataset"
 
     def _clone_dependencies(self):
+        """ 
+        Clones additional model repos that are used as dependencies, or sets the model_source_dir for repos that
+        have already been cloned.
+        """
+        self.args.model_source_dir = None
+
         if self.args.model_name == "mobilenet_v1" and self.args.precision == "fp32":
             tf_model_dir = "/root/model_source/models"
             Repo.clone_from(
@@ -323,8 +328,6 @@ class LaunchInference(object):
             self.args.model_source_dir = tf_model_dir
         if self.args.model_name in ["faster_rcnn", "rfcn", "ssd-mobilenet"]:
             self.args.model_source_dir = "/root/tensorflow/models"
-
-
 
     def _run_model_zoo(self):
         """ 
@@ -338,33 +341,12 @@ class LaunchInference(object):
                    "--precision", args.precision,
                    "--mode", args.mode]
 
-        # Use the pretrained model that we downloaded as the input graph
         if self.args.input_graph:
             run_cmd += ["--in-graph", self.args.input_graph]
 
         if self.args.checkpoint_dir:
             run_cmd += ["--checkpoint", self.args.checkpoint_dir]
 
-        # if self.pretrained_model_path:
-        #     _, file_extension = os.path.splitext(self.pretrained_model_path)
-        #     if file_extension == ".pb":
-        #         run_cmd += ["--in-graph", self.pretrained_model_path]
-        #     else:
-        #         # It's probably a tar file with checkpoints, so extract the tar file
-        #         checkpoint_dir = "/root/pretrained_models/checkpoints"
-        #         with tarfile.open(self.pretrained_model_path) as tf:
-        #             tf.extractall(checkpoint_dir)
-        #
-        #         # If the directory only contains one directory, then pass that instead (filter out temp files)
-        #         dir_files = [i for i in os.listdir(checkpoint_dir) if not i.startswith(".")]
-        #         if len(dir_files) == 1:
-        #             if os.path.isdir(os.path.join(checkpoint_dir, dir_files[0])):
-        #                 checkpoint_dir = os.path.join(checkpoint_dir, dir_files[0])
-        #
-        #         # Set the checkpoint arg
-        #         run_cmd += ["--checkpoint", checkpoint_dir]
-
-        # Set the --model-source-dir arg, depending on the model
         if args.model_source_dir:
             run_cmd += ["--model-source-dir", args.model_source_dir]
 

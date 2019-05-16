@@ -1,5 +1,3 @@
-# FROM intelaipg/intel-optimized-tensorflow:PR25765-devel-mkl
-#FROM tensorflow/tensorflow:1.12.0-devel
 FROM intelaipg/intel-optimized-tensorflow:latest-prs-b5d67b7-avx2-devel-mkl
 
 RUN apt-get update && \
@@ -36,15 +34,6 @@ popd; \
 popd; \
 "
 
-#RUN cd /root/tensorflow/models/research/object_detection && \
-#    chmod 777 metrics && \
-#    cd metrics && \
-#    chmod 777 offline_eval_map_corloc.py && \
-#    sed -i.bak 162s/eval_input_config/eval_input_configs/ offline_eval_map_corloc.py && \
-#    sed -i.bak 91s/input_config/input_config[0]/ offline_eval_map_corloc.py && \
-#    sed -i.bak 92s/input_config/input_config[0]/ offline_eval_map_corloc.py && \
-#    sed -i.bak 95s/input_config/input_config[0]/ offline_eval_map_corloc.py
-
 # Install and run protoc
 RUN bash -xc "\
 pushd /root/tensorflow/models/research; \
@@ -55,12 +44,6 @@ rm protobuf.zip; \
 popd; \
 "
 
-#RUN cd /root/tensorflow/models/research && \
-#    wget -O protobuf.zip https://github.com/google/protobuf/releases/download/v3.3.0/protoc-3.3.0-linux-x86_64.zip && \
-#    unzip -o protobuf.zip && \
-#    rm protobuf.zip && \
-#    ./bin/protoc object_detection/protos/*.proto --python_out=.
-
 # Install the python coco api
 RUN bash -xc "\
 pushd /root/tensorflow/models/cocoapi/PythonAPI; \
@@ -68,11 +51,6 @@ make; \
 cp -r pycocotools /root/tensorflow/models/research; \
 popd; \
 "
-
-#RUN cd /root/tensorflow/models/cocoapi/PythonAPI && \
-#    make && \
-#    cp -r pycocotools /root/tensorflow/models/research
-
 
 ADD launch_inference.py launch_inference.py
 RUN chmod +x launch_inference.py

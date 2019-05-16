@@ -38,7 +38,7 @@ def model_zoo_inference_pipeline(
         verbose='true',
         benchmark_or_accuracy='benchmark',
         extra_model_args='',
-        docker_image='gcr.io/constant-cubist-173123/dina/intel-tf:PR25765-object-detection'):
+        docker_image='gcr.io/constant-cubist-173123/dina/intel-tf-image-recognition:latest'):
   """
   Pipeline with the following stages:
     1. Runs the launch_inference.py script which downloads the pretrained model
@@ -68,18 +68,18 @@ def model_zoo_inference_pipeline(
   inference.set_cpu_request('24500m')
   inference.set_cpu_limit('24500m')
 
-  # volume mount
+  # volume mount for the coco dataset
   inference.add_volume(k8s_client.V1Volume(name='coco-dataset',
                                            host_path=k8s_client.V1HostPathVolumeSource(path='/home/dmsuehir/coco')))
   inference.add_volume_mount(k8s_client.V1VolumeMount(
       mount_path='/root/coco_dataset',
       name='coco-dataset'))
 
-  # volume mount
+  # volume mount for the imagenet dataset
   inference.add_volume(k8s_client.V1Volume(name='imagenet-dataset',
                                            host_path=k8s_client.V1HostPathVolumeSource(path='/home/dmsuehir/Imagenet_Validation')))
   inference.add_volume_mount(k8s_client.V1VolumeMount(
-      mount_path='/root/dataset',
+      mount_path='/root/imagenet_dataset',
       name='imagenet-dataset'))
 
   inference.set_image_pull_policy("Always")
@@ -87,4 +87,4 @@ def model_zoo_inference_pipeline(
 
 if __name__ == '__main__':
   import kfp.compiler as compiler
-  compiler.Compiler().compile(model_zoo_inference_pipeline, __file__ + '_intel_tf-PR25765.tar.gz')
+  compiler.Compiler().compile(model_zoo_inference_pipeline, __file__ + '.tar.gz')
