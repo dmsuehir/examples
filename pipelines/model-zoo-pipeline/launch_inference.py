@@ -1,3 +1,4 @@
+import fileinput
 import glob
 import os
 import subprocess
@@ -7,6 +8,7 @@ import urllib.request
 import zipfile
 
 from argparse import ArgumentParser
+from git import Repo
 from google.cloud import storage
 
 
@@ -14,13 +16,13 @@ class LaunchInference(object):
     def __init__(self, *args, **kwargs):
         self._define_args()
         self.args, _ = self._arg_parser.parse_known_args()
-        self.pretrained_model_path = self._download_pretrained_model()
+        self.extra_args_dict = self._get_extra_args_dict()
 
-        if self.args.data_location.startswith("gs://"):
-            self._download_dataset()
-        elif self.args.data_location != "":
-            print("Files at data_location ({}):".format(self.args.data_location))
-            print(os.listdir(self.args.data_location))
+        self._download_pretrained_model()
+
+        self._download_dataset()
+
+        self._clone_dependencies()
 
         self._run_model_zoo()
 
@@ -127,6 +129,22 @@ class LaunchInference(object):
                                        "like: 'arg1=value1 arg2=value2'",
             dest="extra_model_args", default="", type=str)
 
+    def _get_extra_args_dict(self):
+        """ Parse the string of extra args to a dictionary """
+        extra_args_dict = {}
+
+        if self.args.extra_model_args:
+            extra_args_list = self.args.extra_model_args.split(" ")
+            for arg in extra_args_list:
+                if "=" in arg:
+                    arg_list = arg.split("=")
+                    extra_args_dict[arg_list[0]] = arg_list[1]
+                else:
+                    sys.exit("Extra model arguments must be formatted like 'arg1=value1 arg2=value2'.")
+
+        return extra_args_dict
+
+
     def _download_pretrained_model(self):
         """
         Looks up the model name and precision in the dictionary to determine the URL on where to download the 
@@ -138,6 +156,10 @@ class LaunchInference(object):
         # Using TF OOB gcloud storage links
         storage_bucket_link = "https://storage.googleapis.com/intel-optimized-tensorflow/models/"
         download_link_dict = {
+            "faster_rcnn": {
+                "fp32": os.path.join(storage_bucket_link, "faster_rcnn_resnet50_fp32_coco_pretrained_model.tar.gz"),
+                "int8": os.path.join(storage_bucket_link, "faster_rcnn_int8_pretrained_model.pb")
+            },
             "inception_resnet_v2": {
                 "fp32": os.path.join(storage_bucket_link, "inception_resnet_v2_fp32_pretrained_model.pb"),
                 "int8": os.path.join(storage_bucket_link, "inception_resnet_v2_int8_pretrained_model.pb")
@@ -161,6 +183,14 @@ class LaunchInference(object):
                 "fp32": os.path.join(storage_bucket_link, "resnet101_fp32_pretrained_model.pb"),
                 "int8": os.path.join(storage_bucket_link, "resnet101_int8_pretrained_model.pb")
             },
+            "rfcn": {
+                "fp32": os.path.join(storage_bucket_link, "rfcn_resnet101_fp32_coco_pretrained_model.tar.gz"),
+                "int8": os.path.join(storage_bucket_link, "rfcn_resnet101_int8_coco_pretrained_model.pb")
+            },
+            "ssd-mobilenet": {
+                "fp32": "http://download.tensorflow.org/models/object_detection/ssd_mobilenet_v1_coco_2018_01_28.tar.gz",
+                "int8": os.path.join(storage_bucket_link, "ssdmobilenet_int8_pretrained_model.pb")
+            },
             "squeezenet": {
                 "fp32": os.path.join(storage_bucket_link, "squeezenet_fp32_pretrained_model.tar.gz")
             }
@@ -169,6 +199,8 @@ class LaunchInference(object):
 
         model_name = self.args.model_name
         precision = self.args.precision
+        self.args.input_graph = None
+        self.args.checkpoint_dir = None
 
         if model_name in download_link_dict.keys():
             if self.args.precision in download_link_dict[model_name].keys():
@@ -180,46 +212,78 @@ class LaunchInference(object):
                 urllib.request.urlretrieve(source_path, destination_path)
                 print("Download complete")
 
-                return destination_path
+                _, file_extension = os.path.splitext(destination_path)
+
+                if file_extension == ".pb":
+                    self.args.input_graph = destination_path
+                else:
+                    # It's probably a tar file with checkpoints, so extract the tar file
+                    checkpoint_dir = "/root/pretrained_models/checkpoints"
+                    with tarfile.open(destination_path) as tf:
+                        tf.extractall(checkpoint_dir)
+
+                    # If the directory only contains one directory, then pass that instead (filter out temp files)
+                    dir_files = [i for i in os.listdir(checkpoint_dir) if not i.startswith(".")]
+                    if len(dir_files) == 1:
+                        if os.path.isdir(os.path.join(checkpoint_dir, dir_files[0])):
+                            checkpoint_dir = os.path.join(checkpoint_dir, dir_files[0])
+
+                    # Set the checkpoint arg
+                    self.args.checkpoint_dir = checkpoint_dir
             else:
                 sys.exit("The {} precision for model {} is not supported yet.".format(precision, model_name))
         else:
             sys.exit("The {} model is not supported".format(model_name))
 
-        # # Using AI hub links
-        # download_link_dict = {
-        #     "resnet50": {
-        #         "int8": "https://cloud-aihub-service-prod.storage.googleapis.com/asset/intel.com/products/e0d4316b-0d27-4e1c-adf5-b64317c1ade6/1/resnet50_int8_pretrained_model.pb.zip?GoogleAccessId=service@cloud-aihub-prod.iam.gserviceaccount.com"
-        #     }
-        # }
-        # model_name = self.args.model_name
-        # precision = self.args.precision
-        #
-        # if model_name in download_link_dict.keys():
-        #     if self.args.precision in download_link_dict[model_name].keys():
-        #         source_path = download_link_dict[model_name][precision]
-        #         zip_destination = os.path.join("/root/pretrained_models", "model.zip")
-        #
-        #         print("Downloading pretrained model from {} to {}".format(source_path, zip_destination))
-        #         urllib.request.urlretrieve(source_path, zip_destination)
-        #         print("Download complete")
-        #
-        #         with zipfile.ZipFile(zip_destination, "r") as zip_ref:
-        #             zip_ref.extractall()
-        #
-        #         frozen_graph_match = glob.glob("/root/pretrained_models/*.pb")
-        #
-        #         if len(frozen_graph_match) == 1:
-        #             return frozen_graph_match[0]
-        #         elif len(frozen_graph_match) > 1:
-        #             sys.exit("Multiple frozen graph files found: {}".format(str(frozen_graph_match)))
-        #         else:
-        #             sys.exit("Unable to find frozen graph file.")
-        #
-        #     else:
-        #         sys.exit("The {} precision for model {} is not supported yet.".format(precision, model_name))
-        # else:
-        #     sys.exit("The {} model is not supported".format(model_name))
+
+        # The Faster RCNN and RFCN FP32 benchmarking script has a config file that needs some paths updated
+        if (model_name == "rfcn" or model_name == "faster_rcnn") and precision == "fp32" and \
+            self.args.benchmark_or_accuracy == "benchmark":
+            # Set default config file path, if it wasn't set
+            if "config_file" not in self.extra_args_dict.keys():
+                if self.args.extra_model_args != "":
+                    self.args.extra_model_args += " "
+                config_file_name = "rfcn_pipeline.config" if model_name == "rfcn" else "pipeline.config"
+                self.args.extra_model_args += "config_file={}".format(config_file_name)
+                self.extra_args_dict["config_file"] = config_file_name
+
+            config_file_path = os.path.join(checkpoint_dir, self.extra_args_dict["config_file"])
+
+            original_map_file_path = "/checkpoints/mscoco_label_map.pbtxt"
+            original_dataset_file_path = "/dataset/coco_val.record"
+            base_map_file_name = os.path.basename(original_map_file_path)
+            base_dataset_file_name = os.path.basename(original_dataset_file_path)
+
+            new_label_map = os.path.join(checkpoint_dir, base_map_file_name)
+            new_dataset_path = os.path.join(self.args.data_location, base_dataset_file_name)
+
+            with fileinput.FileInput(config_file_path, inplace=True) as config_file:
+                for line in config_file:
+                    print(line.replace(original_map_file_path, new_label_map).
+                          replace(original_dataset_file_path, new_dataset_path),
+                                  end='')
+
+        # RFCN FP32 Accuracy uses the frozen graph from the tar file instead of checkpoints
+        if model_name == "rfcn" and precision == "fp32" and self.args.benchmark_or_accuracy == "accuracy":
+            # Set default split, if it wasn't set
+            if "split" not in self.extra_args_dict.keys():
+                if self.args.extra_model_args != "":
+                    self.args.extra_model_args += " "
+                self.args.extra_model_args += "split=\"accuracy_message\""
+                self.extra_args_dict["split"] = "\"accuracy_message\""
+            # Set frozen graph
+            self.args.input_graph = os.path.join(self.args.checkpoint_dir, "frozen_inference_graph.pb")
+            self.args.checkpoint_dir = None
+
+        # Faster RCNN FP32 uses frozen graph from the checkpoints directory
+        if model_name == "faster_rcnn" and precision == "fp32" and self.args.benchmark_or_accuracy == "accuracy":
+            self.args.input_graph = os.path.join(self.args.checkpoint_dir, "frozen_inference_graph.pb")
+            self.args.checkpoint_dir = None
+
+        # SSD-MobileNet FP32 uses the frozen graph from the checkpoints directory
+        if model_name == "ssd-mobilenet" and precision == "fp32":
+            self.args.input_graph = os.path.join(self.args.checkpoint_dir, "frozen_inference_graph.pb")
+            self.args.checkpoint_dir = None
 
     def _download_dataset(self):
         data_location = self.args.data_location
@@ -248,6 +312,20 @@ class LaunchInference(object):
 
             self.args.data_location = "/root/dataset"
 
+    def _clone_dependencies(self):
+        if self.args.model_name == "mobilenet_v1" and self.args.precision == "fp32":
+            tf_model_dir = "/root/model_source/models"
+            Repo.clone_from(
+                "https://github.com/tensorflow/models",
+                tf_model_dir,
+                branch="master"
+            )
+            self.args.model_source_dir = tf_model_dir
+        if self.args.model_name in ["faster_rcnn", "rfcn", "ssd-mobilenet"]:
+            self.args.model_source_dir = "/root/tensorflow/models"
+
+
+
     def _run_model_zoo(self):
         """ 
         Generates a command to run the Model Zoo launch script, with all of 
@@ -261,27 +339,34 @@ class LaunchInference(object):
                    "--mode", args.mode]
 
         # Use the pretrained model that we downloaded as the input graph
-        if self.pretrained_model_path:
-            _, file_extension = os.path.splitext(self.pretrained_model_path)
-            if file_extension == ".pb":
-                run_cmd += ["--in-graph", self.pretrained_model_path]
-            else:
-                # It's probably a tar file with checkpoints, so extract the tar file
-                with tarfile.open(self.pretrained_model_path) as tf:
-                    tf.extractall("/root/pretrained_models/checkpoints")
-                checkpoint_dir = "/root/pretrained_models/checkpoints"
+        if self.args.input_graph:
+            run_cmd += ["--in-graph", self.args.input_graph]
 
-                # If the directory only contains one directory, then pass that instead
-                if len(os.listdir(checkpoint_dir)) == 1:
-                    if os.path.isdir(os.path.join(checkpoint_dir, os.listdir(checkpoint_dir)[0])):
-                        checkpoint_dir = os.path.join(checkpoint_dir, os.listdir(checkpoint_dir)[0])
+        if self.args.checkpoint_dir:
+            run_cmd += ["--checkpoint", self.args.checkpoint_dir]
 
-                # Set the checkpoint arg
-                run_cmd += ["--checkpoint", checkpoint_dir]
+        # if self.pretrained_model_path:
+        #     _, file_extension = os.path.splitext(self.pretrained_model_path)
+        #     if file_extension == ".pb":
+        #         run_cmd += ["--in-graph", self.pretrained_model_path]
+        #     else:
+        #         # It's probably a tar file with checkpoints, so extract the tar file
+        #         checkpoint_dir = "/root/pretrained_models/checkpoints"
+        #         with tarfile.open(self.pretrained_model_path) as tf:
+        #             tf.extractall(checkpoint_dir)
+        #
+        #         # If the directory only contains one directory, then pass that instead (filter out temp files)
+        #         dir_files = [i for i in os.listdir(checkpoint_dir) if not i.startswith(".")]
+        #         if len(dir_files) == 1:
+        #             if os.path.isdir(os.path.join(checkpoint_dir, dir_files[0])):
+        #                 checkpoint_dir = os.path.join(checkpoint_dir, dir_files[0])
+        #
+        #         # Set the checkpoint arg
+        #         run_cmd += ["--checkpoint", checkpoint_dir]
 
         # Set the --model-source-dir arg, depending on the model
-        if args.model_name == "mobilenet_v1":
-            run_cmd += ["--model-source-dir", "/root/tensorflow/models"]
+        if args.model_source_dir:
+            run_cmd += ["--model-source-dir", args.model_source_dir]
 
         if args.batch_size and args.batch_size != "-1":
             run_cmd += ["--batch-size", args.batch_size]

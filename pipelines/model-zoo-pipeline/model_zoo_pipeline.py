@@ -37,7 +37,8 @@ def model_zoo_inference_pipeline(
         socket_id='0',
         verbose='true',
         benchmark_or_accuracy='benchmark',
-        extra_model_args=''):
+        extra_model_args='',
+        docker_image='gcr.io/constant-cubist-173123/dina/intel-tf:PR25765-object-detection'):
   """
   Pipeline with the following stages:
     1. Runs the launch_inference.py script which downloads the pretrained model
@@ -59,7 +60,7 @@ def model_zoo_inference_pipeline(
 
   inference = dsl.ContainerOp(
       name='inference',
-      image='gcr.io/constant-cubist-173123/dina/intel-tf:PR25765-models-v3',
+      image=docker_image,
       arguments=arg_list
   ).apply(gcp.use_gcp_secret('user-gcp-sa'))
   inference.set_memory_request('50G')
@@ -68,11 +69,20 @@ def model_zoo_inference_pipeline(
   inference.set_cpu_limit('24500m')
 
   # volume mount
+  inference.add_volume(k8s_client.V1Volume(name='coco-dataset',
+                                           host_path=k8s_client.V1HostPathVolumeSource(path='/home/dmsuehir/coco')))
+  inference.add_volume_mount(k8s_client.V1VolumeMount(
+      mount_path='/root/coco_dataset',
+      name='coco-dataset'))
+
+  # volume mount
   inference.add_volume(k8s_client.V1Volume(name='imagenet-dataset',
                                            host_path=k8s_client.V1HostPathVolumeSource(path='/home/dmsuehir/Imagenet_Validation')))
   inference.add_volume_mount(k8s_client.V1VolumeMount(
       mount_path='/root/dataset',
       name='imagenet-dataset'))
+
+  inference.set_image_pull_policy("Always")
 
 
 if __name__ == '__main__':
